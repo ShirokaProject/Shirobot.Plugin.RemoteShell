@@ -13,7 +13,7 @@ namespace RemoteShell;
     Version = "0.1.0",
     Author = "ShirokaProject",
     GithubRepo = "ShirokaProject/Shirobot.Plugin.RemoteShell",
-    Description = "手动启用并配置用户白名单后，执行预设命令或 shell 命令。",
+    Description = "提供用户在远程执行Shell管理的功能",
     Category = PluginCategory.Utility,
     IsPluginSingleFile = true)]
 public sealed class Plugin : PluginBase<PluginConfig>

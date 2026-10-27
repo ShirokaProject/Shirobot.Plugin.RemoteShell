@@ -1,8 +1,10 @@
 # RemoteShell
 
-[ShiroBot 远程命令插件](https://github.com/ShirokaProject/Shirobot.Plugin.RemoteShell)。默认关闭，必须手动开启 `config.toml` 的 `enabled`，并配置用户白名单后才能执行。宿主 owner/admin 身份不会绕过插件白名单。
+[提供用户在远程执行Shell管理的功能](https://github.com/ShirokaProject/Shirobot.Plugin.RemoteShell)。默认关闭，必须手动开启 `config.toml` 的 `enabled`，并配置用户白名单后才能执行。宿主 owner/admin 身份不会绕过插件白名单。
 
 ## 安装和开启
+
+请谨慎开启 RemoteShell，远程执行 Shell 命令存在风险。
 
 Release 包包含 `RemoteShell.dll` 和默认关闭的 `config.toml`，一起放入宿主的 `plugins/RemoteShell/`。已有配置请保留。修改该目录的 `config.toml`，例如：
 
