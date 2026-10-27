@@ -1,0 +1,25 @@
+# 必须手动改为 true；没有聊天命令可以开启此开关。
+enabled = false
+
+# 必须同时匹配适配器实例 ID 和发送者用户 ID；空列表拒绝所有用户。
+# 示例：allowed_users = ["qq-main:123456789", "discord-main:987654321"]
+# 账号 ID 含冒号时写为 %3A，与宿主 UserReference 的格式一致。
+allowed_users = []
+
+# 默认只允许运行下面的预设命令别名。
+# 改为 true 后，白名单用户可通过 #shell <命令> 执行任意 shell 命令。
+allow_raw_commands = false
+
+# 相对路径以插件数据目录为基准；也可以填写绝对路径。
+working_directory = "."
+timeout_seconds = 30
+max_output_chars = 2000
+
+# 默认不配置可执行命令。以下为 macOS/Linux 示例，取消注释后使用 #shell disk。
+# [[commands]]
+# name = "disk"
+# command = "df -h"
+
+# [[commands]]
+# name = "uptime"
+# command = "uptime"

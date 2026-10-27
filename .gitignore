@@ -1,0 +1,6 @@
+bin/
+obj/
+.shirobot-dev/
+.DS_Store
+.idea/
+artifacts/

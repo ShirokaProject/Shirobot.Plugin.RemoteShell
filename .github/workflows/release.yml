@@ -1,0 +1,72 @@
+name: Build and release plugin
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore RemoteShell.csproj
+      - name: Build
+        run: dotnet build RemoteShell.csproj -c Release --no-restore /p:ContinuousIntegrationBuild=true
+      - name: Verify authorization and command execution
+        run: dotnet run --project Tests/Verification -p:ShiroBotDevelopmentHostEnabled=false
+      - name: Check packaged component version
+        shell: bash
+        run: |
+          version="$(dotnet msbuild RemoteShell.csproj -getProperty:Version -p:Configuration=Release)"
+          expected="$version"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            expected="${GITHUB_REF_NAME#v}"
+          fi
+          dotnet run --project scripts/version-check/VersionCheck.csproj -c Release -- \
+            "bin/Release/net10.0/RemoteShell.dll" "$version" "$expected"
+      - name: Package
+        run: |
+          test -f bin/Release/net10.0/RemoteShell.dll
+          mkdir -p artifacts
+          (cd bin/Release/net10.0 && zip -qr "$GITHUB_WORKSPACE/artifacts/RemoteShell.zip" . -x '*.[pP][dD][bB]')
+          cp bin/Release/net10.0/RemoteShell.dll artifacts/RemoteShell.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-package
+          path: |
+            artifacts/RemoteShell.zip
+            artifacts/RemoteShell.dll
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-package
+          path: artifacts
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/RemoteShell.zip artifacts/RemoteShell.dll --clobber
+          else
+            gh release create "$tag" artifacts/RemoteShell.zip artifacts/RemoteShell.dll --title "$tag" --generate-notes
+          fi
