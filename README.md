@@ -4,7 +4,7 @@
 
 ## 安装和开启
 
-请谨慎开启 RemoteShell，远程执行 Shell 命令存在风险。
+⚠️ 请谨慎开启 RemoteShell，远程执行 Shell 命令存在风险。
 
 Release 包包含 `RemoteShell.dll` 和默认关闭的 `config.toml`，一起放入宿主的 `plugins/RemoteShell/`。已有配置请保留。修改该目录的 `config.toml`，例如：
 
@@ -44,7 +44,7 @@ command = "uptime"
 #shell ls -la
 ```
 
-此时别名表不参与解析，`#shell` 后面的文本直接交给 shell。macOS/Linux 使用 `/bin/sh -c`，Windows 使用 `powershell.exe -NoProfile -NonInteractive -Command`。命令使用宿主操作系统账号的权限，工作目录默认为插件数据目录；不是交互终端，不支持需要输入密码等交互的命令。
+此时别名表不参与解析，`#shell` 后面的文本直接交给 shell。自动按 `zsh → bash → pwsh → powershell → cmd → sh` 顺序选择已安装且可执行的 shell，`sh` 用于精简环境兜底。命令语法应与最终选中的 shell 一致；不加载用户 shell profile。命令使用宿主操作系统账号的权限，工作目录默认为插件数据目录；不是交互终端，不支持需要输入密码等交互的命令。
 
 ## 执行结果
 
@@ -52,6 +52,8 @@ command = "uptime"
 执行完成，退出码：0
 Filesystem ...
 ```
+
+所有子进程设置 `NO_COLOR=1`、`CLICOLOR=0` 并移除强制颜色环境变量。PowerShell 自动使用 Text 输出和 PlainText 渲染。标准输出和标准错误分别以流式方式清理 ANSI 颜色、光标控制和 OSC 控制串，保留中文、普通文本、换行与制表符，合并后以纯文本回传。颜色控制码不会占用输出字符额度。
 
 合并返回标准输出和标准错误。输出默认最多 2000 个字符，超出后截断；进程输出会继续被读取，避免管道堵塞。每次只执行一个命令，后续请求返回“已有命令正在执行”，不会排队。默认 30 秒超时后尝试终止进程树；插件卸载时取消执行。主动脱离进程树的后台进程不受此机制保证，请将预设命令配置为前台任务。
 
@@ -76,11 +78,11 @@ Windows 使用 `powershell -ExecutionPolicy Bypass -File scripts/dev.ps1`；Wind
 ```sh
 dotnet run --project Tests/Verification -p:ShiroBotDevelopmentHostEnabled=false
 dotnet build -c Release
-dotnet run --project scripts/version-check -c Release -- bin/Release/net10.0/RemoteShell.dll 0.1.0 0.1.0
+dotnet run --project scripts/version-check -c Release -- bin/Release/net10.0/RemoteShell.dll 0.1.1 0.1.1
 ```
 
-验证覆盖默认关闭、空白名单、跨实例用户隔离、预设命令参数注入拦截、任意命令显式开启、配置热更新、标准输出/错误、退出码、输出限制、超时、取消、并发及卸载。Release 输出位于 `bin/Release/net10.0/`；官方模板的 GitHub Actions 发布工作流已保留。
+验证覆盖默认关闭、空白名单、跨实例用户隔离、预设命令参数注入拦截、任意命令显式开启、配置热更新、标准输出/错误、退出码、输出限制、超时、取消、并发、卸载、shell 选择优先级、NO_COLOR 环境及跨分块 ANSI 清理。本机已实际验证 zsh/bash/pwsh/sh 的中文、颜色清理和退出码。Windows PowerShell/cmd 的参数构造有验证覆盖，仍需 Windows 实机测试。Release 输出位于 `bin/Release/net10.0/`；官方模板的 GitHub Actions 发布工作流已保留。
 
 ## 许可证
 
-当前尚未声明开源许可证，市场元数据使用 `NOASSERTION`。
+[GPL-3.0-only](LICENSE)。

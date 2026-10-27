@@ -2,9 +2,10 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <DebugType>portable</DebugType>
     <ShiroBotPluginPackagingEnabled Condition="'$(Configuration)' == 'Release'">true</ShiroBotPluginPackagingEnabled>
     <!-- All bundled Models are host-provided, including ones this component does not use. -->
@@ -16,6 +17,7 @@
     <Compile Remove="scripts/**/*.cs;Tests/**/*.cs" />
     <InternalsVisibleTo Include="RemoteShell.Verification" />
     <None Update="config.toml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="LICENSE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

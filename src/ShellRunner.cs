@@ -9,28 +9,9 @@ internal static class ShellRunner
 {
     internal static async Task<ShellResult> RunAsync(
         string command, string workingDirectory, int timeoutSeconds, int maxOutputChars,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ShellExecutable? shell = null)
     {
-        var start = new ProcessStartInfo
-        {
-            FileName = OperatingSystem.IsWindows() ? "powershell.exe" : "/bin/sh",
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-        if (OperatingSystem.IsWindows())
-        {
-            start.ArgumentList.Add("-NoProfile");
-            start.ArgumentList.Add("-NonInteractive");
-            start.ArgumentList.Add("-Command");
-        }
-        else start.ArgumentList.Add("-c");
-        start.ArgumentList.Add(command);
+        var start = ShellEnvironment.CreateStartInfo(shell ?? ShellEnvironment.Select(), command, workingDirectory);
 
         cancellationToken.ThrowIfCancellationRequested();
         using var process = new Process { StartInfo = start };
@@ -69,9 +50,10 @@ internal static class ShellRunner
     private static async Task DrainAsync(StreamReader reader, BoundedOutput output, CancellationToken token)
     {
         var buffer = new char[1024];
+        var filter = new PlainTextFilter();
         int count;
         while ((count = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
-            output.Append(buffer, count);
+            output.Append(filter.Filter(buffer.AsSpan(0, count)));
     }
 
     private sealed class BoundedOutput(int limit)
@@ -79,15 +61,25 @@ internal static class ShellRunner
         private readonly Lock _gate = new();
         private readonly StringBuilder _text = new();
         internal bool Truncated { get; private set; }
-        internal string Text { get { lock (_gate) return _text.ToString(); } }
+        internal string Text
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    var text = _text.ToString();
+                    return text.Length > 0 && char.IsHighSurrogate(text[^1]) ? text[..^1] : text;
+                }
+            }
+        }
 
-        internal void Append(char[] buffer, int count)
+        internal void Append(string text)
         {
             lock (_gate)
             {
-                var take = Math.Min(count, limit - _text.Length);
-                _text.Append(buffer, 0, take);
-                if (take != count) Truncated = true;
+                var take = Math.Min(text.Length, limit - _text.Length);
+                _text.Append(text, 0, take);
+                if (take != text.Length) Truncated = true;
             }
         }
     }

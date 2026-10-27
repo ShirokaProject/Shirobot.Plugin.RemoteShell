@@ -5,7 +5,7 @@ namespace RemoteShell;
 [ConfigModel]
 public sealed class PluginConfig
 {
-    [ConfigField("请谨慎开启，远程执行 Shell 命令存在风险。开启后仍须匹配用户白名单才能执行。", Label = "启用 RemoteShell")]
+    [ConfigField("⚠️ 请谨慎开启，远程执行 Shell 命令存在风险。开启后仍须匹配用户白名单才能执行。", Label = "启用 RemoteShell")]
     public bool Enabled { get; set; } = false;
 
     [ConfigField("使用 实例ID:用户ID，例如 qq-main:123456；空白名单拒绝所有用户。", Label = "用户白名单")]

@@ -14,6 +14,47 @@ static void Check(bool condition, string message)
 
 var root = Path.Combine(Path.GetTempPath(), "remoteshell-verify-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
+var selectedShell = ShellEnvironment.Select();
+var powerShell = selectedShell.Kind == ShellKind.PowerShell;
+var cmdShell = selectedShell.Kind == ShellKind.Cmd;
+string PlatformCommand(string posix, string power, string cmd) => powerShell ? power : cmdShell ? cmd : posix;
+var priority = new[] { "zsh", "bash", "pwsh", "powershell", "cmd", "sh" };
+for (var first = 0; first < priority.Length; first++)
+{
+    var expected = priority[first];
+    var selected = ShellEnvironment.Select(name => Array.IndexOf(priority, name) >= first ? "/test/" + name : null);
+    Check(selected.Path == "/test/" + expected, "Shell selection must follow zsh > bash > pwsh > powershell > cmd > sh.");
+}
+try
+{
+    ShellEnvironment.Select(_ => null);
+    throw new Exception("Missing shells must produce an explicit failure.");
+}
+catch (InvalidOperationException) { }
+
+const string literalCommand = "echo 'a;b' \"quoted\"";
+foreach (var kind in Enum.GetValues<ShellKind>())
+{
+    var start = ShellEnvironment.CreateStartInfo(new(kind, "/test/shell"), literalCommand, root);
+    Check(start.Environment["NO_COLOR"] == "1" && start.Environment["CLICOLOR"] == "0" &&
+        !start.Environment.ContainsKey("FORCE_COLOR") && !start.Environment.ContainsKey("CLICOLOR_FORCE"),
+        "Every shell must receive no-color output settings.");
+    if (kind == ShellKind.PowerShell)
+    {
+        var script = System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(start.ArgumentList[^1]));
+        Check(script.Contains("OutputRendering = 'PlainText'") && script.EndsWith(literalCommand) &&
+            start.ArgumentList.Contains("Text"), "PowerShell must preserve command text and request plain-text output.");
+    }
+    else if (kind == ShellKind.Cmd)
+        Check(start.Arguments == "/d /s /c \"chcp 65001 >nul & " + literalCommand + "\"", "cmd must use its own quote handling.");
+    else Check(start.ArgumentList[^1] == literalCommand && start.ArgumentList.Contains("-c"), "POSIX shells must preserve the command as a single argument.");
+}
+var plain = new PlainTextFilter();
+var plainResult = plain.Filter("\x1b[3") + plain.Filter("1mred\x1b[0") + plain.Filter("m\r") +
+    plain.Filter("\n\x1b]8;;https://example.com\x1b\\link\x1b]8;;\a\tok\a");
+Check(plainResult == "red\nlink\tok", "ANSI sequences split across reads must be removed without losing visible text.");
+Check(new PlainTextFilter().Filter("before\x1bPsecret\x1b\\after") == "beforeafter", "Control strings must not leak into text output.");
+
 var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
 var template = File.ReadAllText(Path.Combine(projectRoot, "config.toml"));
 var config = TomlSerializer.Deserialize<PluginConfig>(template,
@@ -76,9 +117,10 @@ try
     await Send("#shell check");
     Check(Last().Contains("无权限"), "Enabled with an empty whitelist must refuse everyone.");
 
-    var command = OperatingSystem.IsWindows()
-        ? "'executed' | Set-Content -Path marker.txt; Write-Output 'stdout'; [Console]::Error.Write('stderr'); exit 7"
-        : "printf executed > marker.txt; printf stdout; printf stderr >&2; exit 7";
+    var command = PlatformCommand(
+        "printf executed > marker.txt; printf stdout; printf stderr >&2; exit 7",
+        "'executed' | Set-Content -Path marker.txt; Write-Output 'stdout'; [Console]::Error.Write('stderr'); exit 7",
+        "(echo executed)>marker.txt & <nul set /p=stdout & <nul set /p=stderr 1>&2 & exit /b 7");
     config = new PluginConfig
     {
         Enabled = true, AllowedUsers = ["qq-main:123"], WorkingDirectory = root,
@@ -117,13 +159,32 @@ try
 
     config.AllowRawCommands = true;
     await Apply(config);
-    await Send(OperatingSystem.IsWindows() ? "#shell Write-Output raw" : "#shell printf raw");
+    await Send(PlatformCommand("#shell printf raw", "#shell Write-Output raw", "#shell echo raw"));
     Check(Last().Contains("raw") && Last().Contains("退出码：0"), "Explicit raw mode must execute the supplied command for whitelisted users.");
 
-    var flood = OperatingSystem.IsWindows() ? "[Console]::Write(('x' * 20000))" : "i=0; while [ $i -lt 10000 ]; do printf xx; i=$((i+1)); done";
+    // Run native shells actually installed on this machine, rather than only checking argument plans.
+    foreach (var name in new[] { "zsh", "bash", "pwsh", "powershell", "sh" })
+    {
+        if (ShellEnvironment.FindExecutable(name) is not { } shellPath) continue;
+        var kind = name is "pwsh" or "powershell" ? ShellKind.PowerShell : name switch
+        {
+            "zsh" => ShellKind.Zsh, "bash" => ShellKind.Bash, _ => ShellKind.Sh
+        };
+        var unicodeCommand = kind == ShellKind.PowerShell
+            ? "[Console]::Out.Write([char]27 + '[31m你好' + [char]27 + '[0m'); [Console]::Error.Write([char]27 + '[33m错误' + [char]27 + '[0m'); Write-Output ('NO_COLOR=' + $env:NO_COLOR); exit 7"
+            : "printf '\\033[31m你好\\033[0m'; printf '\\033[33m错误\\033[0m' >&2; printf 'NO_COLOR=%s' \"$NO_COLOR\"; exit 7";
+        var native = await ShellRunner.RunAsync(unicodeCommand, root, 10, 500, CancellationToken.None, new(kind, shellPath));
+        Check(native.ExitCode == 7 && native.Output.Contains("你好") && native.Output.Contains("错误") &&
+            native.Output.Contains("NO_COLOR=1") && !native.Output.Contains('\x1b'),
+            "Native " + name + " must return no-color UTF-8 text and its exit code.");
+        Console.WriteLine("PASS: native " + name + " UTF-8, NO_COLOR, ANSI filtering and exit status.");
+    }
+
+    var flood = PlatformCommand("i=0; while [ $i -lt 10000 ]; do printf xx; i=$((i+1)); done",
+        "[Console]::Write(('x' * 20000))", "for /l %i in (1,1,10000) do @<nul set /p=xx");
     var bounded = await ShellRunner.RunAsync(flood, root, 10, 100, CancellationToken.None);
     Check(bounded.Truncated && bounded.Output.Length == 100, "Output must stay bounded while continuing to drain the child.");
-    var slow = OperatingSystem.IsWindows() ? "Start-Sleep -Seconds 20" : "sleep 20";
+    var slow = PlatformCommand("sleep 20", "Start-Sleep -Seconds 20", "ping -n 21 127.0.0.1 >nul");
     var watch = Stopwatch.StartNew();
     var timeout = await ShellRunner.RunAsync(slow, root, 1, 100, CancellationToken.None);
     Check(timeout.TimedOut && watch.Elapsed < TimeSpan.FromSeconds(5), "Timeout must stop long-running commands promptly.");
@@ -150,7 +211,7 @@ try
     var unloadingRun = Send("#shell slow");
     await plugin.OnUnload();
     await unloadingRun;
-    Console.WriteLine("PASS: disabled template, explicit enable, instance/user whitelist, aliases/injection rejection, raw opt-in, live revocation, stdout/stderr, exit codes, output limits, timeout, cancellation, concurrency and unload.");
+    Console.WriteLine("PASS: disabled template, explicit enable, instance/user whitelist, aliases/injection rejection, raw opt-in, live revocation, stdout/stderr, exit codes, output limits, timeout, cancellation, concurrency, unload, shell priority, NO_COLOR and plain-text output.");
 }
 finally
 {

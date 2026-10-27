@@ -10,7 +10,7 @@ namespace RemoteShell;
 
 [BotPlugin("RemoteShell",
     Name = "RemoteShell",
-    Version = "0.1.0",
+    Version = "0.1.1",
     Author = "ShirokaProject",
     GithubRepo = "ShirokaProject/Shirobot.Plugin.RemoteShell",
     Description = "提供用户在远程执行Shell管理的功能",
